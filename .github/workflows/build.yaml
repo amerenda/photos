@@ -58,14 +58,12 @@ jobs:
       TAG: ${{ needs.set-tag.outputs.tag }}
       PREFIX: ${{ needs.set-tag.outputs.pr_prefix }}
     steps:
-      - name: Checkout gitops repo
-        uses: actions/checkout@v6
-        with:
-          repository: ${{ env.GITOPS_REPO }}
-          token: ${{ env.GITOPS_PAT }}
-
-      - name: Close existing deploy PRs
+      - name: Deploy to gitops
         run: |
+          git clone https://x-access-token:${GITOPS_PAT}@github.com/${GITOPS_REPO}.git /tmp/gitops
+          cd /tmp/gitops
+
+          # Close existing deploy PRs
           EXISTING=$(curl -s \
             -H "Authorization: token ${GITOPS_PAT}" \
             "https://api.github.com/repos/${GITOPS_REPO}/pulls?state=open&per_page=100" \
@@ -83,8 +81,6 @@ jobs:
               -d '{"state":"closed"}' > /dev/null
           done
 
-      - name: Update manifest and open PR
-        run: |
           BRANCH="${PREFIX}/photos-${TAG}"
           git checkout -b "${BRANCH}"
 
