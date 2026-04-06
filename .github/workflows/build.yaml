@@ -1,0 +1,115 @@
+name: Build and Push
+
+on:
+  push:
+    branches: [main]
+    tags: ['release/v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  IMAGE: amerenda/photos
+  GITOPS_REPO: amerenda/k3s-dean-gitops
+
+jobs:
+  set-tag:
+    if: github.event_name != 'pull_request'
+    runs-on: arc-runner-set
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      pr_prefix: ${{ steps.tag.outputs.pr_prefix }}
+    steps:
+      - name: Set image tag
+        id: tag
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/release/* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/release/}"
+            echo "tag=${VERSION}" >> "$GITHUB_OUTPUT"
+            echo "pr_prefix=release" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+            echo "pr_prefix=deploy" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    name: Build and push
+    needs: [set-tag]
+    if: github.event_name != 'pull_request'
+    runs-on: arc-runner-set
+    env:
+      TAG: ${{ needs.set-tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Login to Docker Hub
+        run: echo "${DOCKERHUB_TOKEN}" | docker login -u "${DOCKERHUB_USERNAME}" --password-stdin
+
+      - name: Build and push
+        run: |
+          docker build -t "${IMAGE}:${TAG}" .
+          docker push "${IMAGE}:${TAG}"
+
+  deploy:
+    name: Deploy to k3s
+    needs: [set-tag, build]
+    runs-on: arc-runner-set
+    env:
+      TAG: ${{ needs.set-tag.outputs.tag }}
+      PREFIX: ${{ needs.set-tag.outputs.pr_prefix }}
+    steps:
+      - name: Checkout gitops repo
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ env.GITOPS_REPO }}
+          token: ${{ env.GITOPS_PAT }}
+
+      - name: Close existing deploy PRs
+        run: |
+          EXISTING=$(curl -s \
+            -H "Authorization: token ${GITOPS_PAT}" \
+            "https://api.github.com/repos/${GITOPS_REPO}/pulls?state=open&per_page=100" \
+            | python3 -c "
+          import json,sys
+          for pr in json.load(sys.stdin):
+              ref = pr.get('head',{}).get('ref','')
+              if ref.startswith('deploy/photos-') or ref.startswith('release/photos-'):
+                  print(pr['number'])
+          " 2>/dev/null || true)
+          for N in $EXISTING; do
+            curl -s -X PATCH \
+              -H "Authorization: token ${GITOPS_PAT}" \
+              "https://api.github.com/repos/${GITOPS_REPO}/pulls/${N}" \
+              -d '{"state":"closed"}' > /dev/null
+          done
+
+      - name: Update manifest and open PR
+        run: |
+          BRANCH="${PREFIX}/photos-${TAG}"
+          git checkout -b "${BRANCH}"
+
+          sed -i "s|image: amerenda/photos:[^ ]*|image: amerenda/photos:${TAG}|g" \
+            apps/photos/deployment.yaml
+
+          git config user.name "amerenda-deploy-bot[bot]"
+          git config user.email "3192609+amerenda-deploy-bot[bot]@users.noreply.github.com"
+          git add apps/photos/deployment.yaml
+          git diff --cached --quiet && exit 0
+          git commit -m "${PREFIX}: photos ${TAG}"
+          git push origin "${BRANCH}"
+
+          PR=$(curl -s -X POST \
+            -H "Authorization: token ${GITOPS_PAT}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/${GITOPS_REPO}/pulls" \
+            -d "{
+              \"title\": \"${PREFIX}: photos ${TAG}\",
+              \"body\": \"Deploy photos ${TAG}.\n\nSource: https://github.com/amerenda/photos/commit/${GITHUB_SHA}\",
+              \"head\": \"${BRANCH}\",
+              \"base\": \"main\"
+            }")
+          PR_NUMBER=$(echo "$PR" | python3 -c "import json,sys; print(json.load(sys.stdin)['number'])")
+          curl -s -X POST \
+            -H "Authorization: token ${GITOPS_PAT}" \
+            "https://api.github.com/repos/${GITOPS_REPO}/issues/${PR_NUMBER}/labels" \
+            -d '["deploy:photos"]'

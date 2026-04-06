@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin — Gallery</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="admin-body">
+
+  <header class="site-header">
+    <span class="site-title">Admin</span>
+    <span class="header-user">{{.User}}</span>
+    <a href="/logout" class="header-link">Sign out</a>
+  </header>
+
+  <main class="admin-main">
+
+    <!-- Upload -->
+    <section class="admin-section">
+      <h2>Upload Photo</h2>
+      <form id="upload-form" enctype="multipart/form-data">
+        <select name="album" id="album-select" class="admin-select">
+          <option value="public">Public</option>
+          <option value="secret">Private</option>
+        </select>
+        <input type="file" name="file" id="file-input" accept="image/*" class="admin-file-input">
+        <button type="submit" class="admin-btn">Upload</button>
+      </form>
+      <p id="upload-status" class="upload-status"></p>
+    </section>
+
+    <!-- Public album -->
+    <section class="admin-section">
+      <h2>Public Album <span class="photo-count">({{len .PublicPhotos}})</span></h2>
+      {{if .PublicPhotos}}
+      <div class="admin-grid">
+        {{range .PublicPhotos}}
+        <div class="admin-thumb" id="pub-{{.}}">
+          <img src="/photos/public/{{.}}" alt="{{.}}" loading="lazy">
+          <div class="admin-thumb-name">{{.}}</div>
+          <button class="delete-btn" onclick="deletePhoto('public','{{.}}')">Delete</button>
+        </div>
+        {{end}}
+      </div>
+      {{else}}
+      <p class="empty-note">No photos.</p>
+      {{end}}
+    </section>
+
+    <!-- Secret album -->
+    <section class="admin-section">
+      <h2>Private Album <span class="photo-count">({{len .SecretPhotos}})</span></h2>
+      {{if .SecretPhotos}}
+      <div class="admin-grid">
+        {{range .SecretPhotos}}
+        <div class="admin-thumb" id="sec-{{.}}">
+          <img src="/photos/secret/{{.}}" alt="{{.}}" loading="lazy">
+          <div class="admin-thumb-name">{{.}}</div>
+          <button class="delete-btn" onclick="deletePhoto('secret','{{.}}')">Delete</button>
+        </div>
+        {{end}}
+      </div>
+      {{else}}
+      <p class="empty-note">No photos.</p>
+      {{end}}
+    </section>
+
+  </main>
+
+  <script>
+    // Upload
+    document.getElementById('upload-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const status = document.getElementById('upload-status');
+      const form = new FormData(e.target);
+      status.textContent = 'Uploading…';
+      try {
+        const r = await fetch('/admin/upload', { method: 'POST', body: form });
+        if (r.ok) {
+          status.textContent = 'Uploaded. Reload to see it.';
+          status.style.color = '#4caf50';
+        } else {
+          const t = await r.text();
+          status.textContent = 'Error: ' + t;
+          status.style.color = '#f44336';
+        }
+      } catch (err) {
+        status.textContent = 'Error: ' + err;
+        status.style.color = '#f44336';
+      }
+    });
+
+    // Delete
+    async function deletePhoto(album, name) {
+      if (!confirm('Delete ' + name + '?')) return;
+      const r = await fetch('/admin/photo?album=' + encodeURIComponent(album) + '&name=' + encodeURIComponent(name), {
+        method: 'DELETE',
+      });
+      if (r.ok) {
+        const prefix = album === 'public' ? 'pub-' : 'sec-';
+        document.getElementById(prefix + name)?.remove();
+      } else {
+        alert('Delete failed: ' + await r.text());
+      }
+    }
+  </script>
+</body>
+</html>

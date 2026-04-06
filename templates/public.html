@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gallery</title>
+  <link rel="stylesheet" href="/static/splide.min.css">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="gallery-body">
+
+  <header class="site-header">
+    <span class="site-title">Gallery</span>
+  </header>
+
+  {{if .Photos}}
+  <section id="main-splide" class="splide fullscreen-splide" aria-label="Photo gallery">
+    <div class="splide__track">
+      <ul class="splide__list">
+        {{range .Photos}}
+        <li class="splide__slide">
+          <img src="/photos/public/{{.}}" alt="Gallery photo" loading="lazy">
+        </li>
+        {{end}}
+      </ul>
+    </div>
+  </section>
+  {{else}}
+  <div class="empty-state">No photos yet.</div>
+  {{end}}
+
+  <script src="/static/splide.min.js"></script>
+  <script>
+    new Splide('#main-splide', {
+      type       : 'fade',
+      rewind     : true,
+      autoplay   : true,
+      interval   : 5000,
+      speed      : 1200,
+      pauseOnHover: true,
+      arrows     : true,
+      pagination : true,
+      cover      : true,
+      heightRatio: 1,
+    }).mount();
+  </script>
+</body>
+</html>
