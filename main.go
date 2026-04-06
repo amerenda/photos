@@ -112,7 +112,7 @@ func (s *server) secretAuth(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) secretGallery(w http.ResponseWriter, r *http.Request) {
-	photos := gallery.ListImages(s.secretDir)
+	photos := gallery.Shuffle(gallery.ListImages(s.secretDir))
 	render(w, "secret.html", map[string]any{"Photos": photos})
 }
 

@@ -14,6 +14,7 @@
   </header>
 
   {{if .Photos}}
+  <!-- Hero slideshow -->
   <section id="main-splide" class="splide fullscreen-splide" aria-label="Photo gallery">
     <div class="splide__track">
       <ul class="splide__list">
@@ -25,24 +26,110 @@
       </ul>
     </div>
   </section>
+
+  <!-- Photo grid -->
+  <section class="gallery-grid-section">
+    <div class="photo-grid">
+      {{range $i, $p := .Photos}}
+      <div class="grid-item" onclick="openLightbox({{$i}})">
+        <img src="/photos/public/{{$p}}" alt="" loading="lazy">
+      </div>
+      {{end}}
+    </div>
+  </section>
   {{else}}
   <div class="empty-state">No photos yet.</div>
   {{end}}
 
+  <!-- Lightbox -->
+  <div id="lb" class="lb-overlay" role="dialog" aria-modal="true">
+    <button id="lb-prev" class="lb-nav" aria-label="Previous" onclick="prevPhoto()">&#8249;</button>
+    <img id="lb-img" src="" alt="">
+    <button id="lb-next" class="lb-nav" aria-label="Next" onclick="nextPhoto()">&#8250;</button>
+    <button class="lb-close" aria-label="Close" onclick="closeLightbox()">&#x2715;</button>
+  </div>
+
   <script src="/static/splide.min.js"></script>
   <script>
     new Splide('#main-splide', {
-      type       : 'fade',
-      rewind     : true,
-      autoplay   : true,
-      interval   : 5000,
-      speed      : 1200,
+      type:         'fade',
+      rewind:       true,
+      autoplay:     true,
+      interval:     5000,
+      speed:        1200,
       pauseOnHover: true,
-      arrows     : true,
-      pagination : true,
-      cover      : true,
-      heightRatio: 1,
+      arrows:       true,
+      pagination:   true,
+      cover:        true,
+      heightRatio:  1,
     }).mount();
+
+    // ── Lightbox ────────────────────────────────────────
+    const photos  = [{{range .Photos}}"{{.}}",{{end}}];
+    const baseUrl = "/photos/public/";
+    let current   = 0;
+    let hideTimer = null;
+
+    const lb      = document.getElementById('lb');
+    const lbImg   = document.getElementById('lb-img');
+    const lbPrev  = document.getElementById('lb-prev');
+    const lbNext  = document.getElementById('lb-next');
+    const lbBtns  = lb.querySelectorAll('.lb-nav, .lb-close');
+
+    function showButtons() {
+      lbBtns.forEach(b => b.classList.add('visible'));
+      clearTimeout(hideTimer);
+      hideTimer = setTimeout(() => lbBtns.forEach(b => b.classList.remove('visible')), 2500);
+    }
+
+    function openLightbox(idx) {
+      current = idx;
+      lbImg.src = baseUrl + photos[current];
+      lb.classList.add('open');
+      showButtons();
+    }
+
+    function closeLightbox() {
+      lb.classList.remove('open');
+      clearTimeout(hideTimer);
+    }
+
+    function prevPhoto() {
+      current = (current - 1 + photos.length) % photos.length;
+      lbImg.src = baseUrl + photos[current];
+      showButtons();
+    }
+
+    function nextPhoto() {
+      current = (current + 1) % photos.length;
+      lbImg.src = baseUrl + photos[current];
+      showButtons();
+    }
+
+    // Click overlay background to close
+    lb.addEventListener('click', e => { if (e.target === lb) closeLightbox(); });
+
+    // Keyboard navigation
+    document.addEventListener('keydown', e => {
+      if (!lb.classList.contains('open')) return;
+      if (e.key === 'Escape')     closeLightbox();
+      if (e.key === 'ArrowLeft')  prevPhoto();
+      if (e.key === 'ArrowRight') nextPhoto();
+    });
+
+    // Show buttons on mouse move
+    lb.addEventListener('mousemove', showButtons);
+
+    // Touch swipe
+    let touchStartX = 0;
+    lb.addEventListener('touchstart', e => {
+      touchStartX = e.touches[0].clientX;
+      showButtons();
+    }, {passive: true});
+    lb.addEventListener('touchend', e => {
+      const dx = e.changedTouches[0].clientX - touchStartX;
+      if (Math.abs(dx) > 50) dx < 0 ? nextPhoto() : prevPhoto();
+    }, {passive: true});
   </script>
 </body>
 </html>
