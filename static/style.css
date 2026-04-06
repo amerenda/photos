@@ -116,7 +116,7 @@ body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--t
 .puzzle-wink:hover { transform: scale(1.15); }
 
 /* ── Hero section ──────────────────────────────────── */
-.gallery-grid-section { padding: 2rem 1rem 4rem; }
+.gallery-grid-section { padding: 0.5rem 0.5rem 4rem; }
 
 /* ── Lightbox ──────────────────────────────────────── */
 .lb-overlay {
@@ -146,12 +146,11 @@ body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--t
 
 /* ── Photo grid (secret gallery) ──────────────────── */
 .photo-grid {
-  padding: 5rem 1rem 2rem;
-  columns: 3 280px; gap: 0.75rem;
+  columns: 4 120px; gap: 3px;
 }
-.grid-item { display: block; margin-bottom: 0.75rem; border-radius: 8px; overflow: hidden; cursor: zoom-in; }
-.grid-item img { width: 100%; display: block; transition: transform 0.3s; }
-.grid-item:hover img { transform: scale(1.03); }
+.grid-item { display: block; margin-bottom: 3px; border-radius: 2px; overflow: hidden; cursor: zoom-in; }
+.grid-item img { width: 100%; display: block; transition: transform 0.25s; }
+.grid-item:hover img { transform: scale(1.05); }
 
 /* ── Admin ─────────────────────────────────────────── */
 .admin-main { padding: 5rem 2rem 4rem; max-width: 1200px; margin: 0 auto; }

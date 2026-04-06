@@ -14,6 +14,15 @@
     <a href="/logout" class="header-link">Forget</a>
   </header>
 
+  {{if .ShowSecretEntry}}
+  <div class="secret-entry">
+    <form action="/s/auth" method="POST" class="secret-entry-form">
+      <input type="password" name="password" class="secret-entry-input" autocomplete="off" spellcheck="false" placeholder="···">
+      <button type="submit" class="secret-entry-btn">→</button>
+    </form>
+  </div>
+  {{end}}
+
   {{if .Photos}}
   <section id="main-splide" class="splide fullscreen-splide" aria-label="Hidden photo gallery">
     <div class="splide__track">
@@ -27,15 +36,6 @@
     </div>
   </section>
 
-  {{if .ShowSecretEntry}}
-  <div class="secret-entry">
-    <form action="/s/auth" method="POST" class="secret-entry-form">
-      <input type="password" name="password" class="secret-entry-input" autocomplete="off" spellcheck="false" placeholder="···">
-      <button type="submit" class="secret-entry-btn">→</button>
-    </form>
-  </div>
-  {{end}}
-
   <section class="gallery-grid-section">
     <div class="photo-grid">
       {{range $i, $p := .Photos}}
@@ -45,8 +45,6 @@
       {{end}}
     </div>
   </section>
-  {{else}}
-  <div class="empty-state">Nothing here yet.</div>
   {{end}}
 
   <div id="lb" class="lb-overlay" role="dialog" aria-modal="true">
