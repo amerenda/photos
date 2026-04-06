@@ -89,6 +89,26 @@ body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--t
 }
 .puzzle-overlay.open { display: flex; }
 
+/* ── Secret entry (on reward page) ────────────────── */
+.secret-entry {
+  display: flex; justify-content: center;
+  padding: 2rem 1rem 0;
+}
+.secret-entry-form { display: flex; gap: 0.5rem; align-items: center; }
+.secret-entry-input {
+  width: 160px; padding: 0.65rem 0.9rem;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  color: var(--text); font-size: 1rem; outline: none; text-align: center;
+  transition: border-color 0.2s; letter-spacing: 0.1em;
+}
+.secret-entry-input:focus { border-color: var(--accent); }
+.secret-entry-btn {
+  padding: 0.65rem 1rem;
+  background: transparent; border: 1px solid var(--border); border-radius: 8px;
+  color: var(--muted); font-size: 1rem; cursor: pointer; transition: all 0.2s;
+}
+.secret-entry-btn:hover { border-color: var(--accent); color: var(--accent); }
+
 .puzzle-wink {
   font-size: 5rem; text-decoration: none; display: block;
   transition: transform 0.2s;

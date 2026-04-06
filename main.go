@@ -142,7 +142,10 @@ func (s *server) puzzleRewardGallery(w http.ResponseWriter, r *http.Request) {
 	for _, p := range photos {
 		urls = append(urls, "/photos/puzzle_reward/"+p)
 	}
-	render(w, "puzzle.html", map[string]any{"Photos": gallery.Shuffle(urls)})
+	render(w, "puzzle.html", map[string]any{
+		"Photos":          gallery.Shuffle(urls),
+		"ShowSecretEntry": true,
+	})
 }
 
 // ── Photo serving ────────────────────────────────────────────────────────────

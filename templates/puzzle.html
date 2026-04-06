@@ -27,6 +27,15 @@
     </div>
   </section>
 
+  {{if .ShowSecretEntry}}
+  <div class="secret-entry">
+    <form action="/s/auth" method="POST" class="secret-entry-form">
+      <input type="password" name="password" class="secret-entry-input" autocomplete="off" spellcheck="false" placeholder="···">
+      <button type="submit" class="secret-entry-btn">→</button>
+    </form>
+  </div>
+  {{end}}
+
   <section class="gallery-grid-section">
     <div class="photo-grid">
       {{range $i, $p := .Photos}}
