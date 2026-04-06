@@ -33,7 +33,7 @@ body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--t
 .header-link:hover { text-decoration: underline; }
 
 /* ── Fullscreen Splide slideshow ───────────────────── */
-.fullscreen-splide { width: 100vw; height: 100dvh; }
+.fullscreen-splide { width: 100vw; height: 55dvh; min-height: 260px; }
 
 .fullscreen-splide .splide__slide {
   display: flex; align-items: center; justify-content: center;
