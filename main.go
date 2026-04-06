@@ -125,17 +125,6 @@ func (s *server) secretGallery(w http.ResponseWriter, r *http.Request) {
 // ── Puzzle album (Konami code + password) ───────────────────────────────────
 
 func (s *server) puzzleAuth(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
-		return
-	}
-	if subtle.ConstantTimeCompare(
-		[]byte(r.FormValue("password")),
-		[]byte(os.Getenv("SECRET_ALBUM_PASSWORD")),
-	) != 1 {
-		http.Error(w, "no", http.StatusUnauthorized)
-		return
-	}
 	auth.SetPuzzleCookie(w)
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -181,7 +170,7 @@ func (s *server) servePhoto(w http.ResponseWriter, r *http.Request) {
 	isAdmin := auth.GetAdminUser(r) != ""
 	switch meta.Access {
 	case gallery.AccessSecret:
-		if !isAdmin && !auth.IsSecretAuthed(r) && !auth.IsPuzzleAuthed(r) {
+		if !isAdmin && !auth.IsSecretAuthed(r) {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}

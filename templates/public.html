@@ -41,14 +41,9 @@
   <div class="empty-state">No photos yet.</div>
   {{end}}
 
-  <!-- Puzzle modal (shown only after Konami code / title taps) -->
+  <!-- Puzzle overlay (shown after Konami code / title taps) -->
   <div id="puzzle-overlay" class="puzzle-overlay">
-    <div id="puzzle-card" class="puzzle-card">
-      <form id="puzzle-form">
-        <input id="puzzle-input" type="password" class="puzzle-input" autocomplete="off" spellcheck="false">
-        <button id="puzzle-submit" type="submit" class="puzzle-btn">→</button>
-      </form>
-    </div>
+    <a href="/reward" class="puzzle-wink" title="">😉</a>
   </div>
 
   <!-- Lightbox -->
@@ -158,49 +153,20 @@
       if (tapCount >= 7) { tapCount = 0; openPuzzleModal(); }
     });
 
-    // ── Puzzle modal ────────────────────────────────────
+    // ── Puzzle overlay ───────────────────────────────────
     const puzzleOverlay = document.getElementById('puzzle-overlay');
-    const puzzleInput   = document.getElementById('puzzle-input');
 
-    function openPuzzleModal() {
+    async function openPuzzleModal() {
+      await fetch('/p/auth', {method: 'POST'});
       puzzleOverlay.classList.add('open');
-      puzzleInput.value = '';
-      puzzleInput.focus();
-    }
-
-    function closePuzzleModal() {
-      puzzleOverlay.classList.remove('open');
     }
 
     puzzleOverlay.addEventListener('click', e => {
-      if (e.target === puzzleOverlay) closePuzzleModal();
+      if (e.target === puzzleOverlay) puzzleOverlay.classList.remove('open');
     });
 
     document.addEventListener('keydown', e => {
-      if (e.key === 'Escape' && puzzleOverlay.classList.contains('open')) closePuzzleModal();
-    });
-
-    document.getElementById('puzzle-form').addEventListener('submit', async e => {
-      e.preventDefault();
-      const btn = document.getElementById('puzzle-submit');
-      btn.disabled = true;
-      const r = await fetch('/p/auth', {
-        method: 'POST',
-        body: new URLSearchParams({password: puzzleInput.value}),
-      });
-      if (r.ok) {
-        // Show 😉
-        document.getElementById('puzzle-card').innerHTML =
-          '<a href="/reward" class="puzzle-wink" title="">😉</a>';
-      } else {
-        // Shake and let them try again
-        puzzleInput.classList.remove('shake');
-        void puzzleInput.offsetWidth; // reflow to restart animation
-        puzzleInput.classList.add('shake');
-        puzzleInput.value = '';
-        puzzleInput.focus();
-        btn.disabled = false;
-      }
+      if (e.key === 'Escape') puzzleOverlay.classList.remove('open');
     });
   </script>
 </body>

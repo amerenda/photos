@@ -89,44 +89,11 @@ body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--t
 }
 .puzzle-overlay.open { display: flex; }
 
-.puzzle-card {
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: 14px; padding: 2rem 1.75rem;
-  display: flex; align-items: center; justify-content: center;
-  min-width: 220px;
-}
-
-.puzzle-card form { display: flex; gap: 0.5rem; align-items: center; }
-
-.puzzle-input {
-  width: 160px; padding: 0.65rem 0.9rem;
-  background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
-  color: var(--text); font-size: 1rem; outline: none;
-  transition: border-color 0.2s;
-}
-.puzzle-input:focus { border-color: var(--border); } /* intentionally muted */
-
-.puzzle-btn {
-  padding: 0.65rem 1rem;
-  background: transparent; border: 1px solid var(--border); border-radius: 8px;
-  color: var(--muted); font-size: 1rem; cursor: pointer; transition: all 0.2s;
-}
-.puzzle-btn:hover { border-color: var(--text); color: var(--text); }
-
 .puzzle-wink {
-  font-size: 4rem; text-decoration: none; display: block;
+  font-size: 5rem; text-decoration: none; display: block;
   transition: transform 0.2s;
 }
 .puzzle-wink:hover { transform: scale(1.15); }
-
-@keyframes konami-shake {
-  0%, 100% { transform: translateX(0); }
-  20%       { transform: translateX(-8px); }
-  40%       { transform: translateX(8px); }
-  60%       { transform: translateX(-5px); }
-  80%       { transform: translateX(5px); }
-}
-.shake { animation: konami-shake 0.35s ease-in-out; }
 
 /* ── Hero section ──────────────────────────────────── */
 .gallery-grid-section { padding: 2rem 1rem 4rem; }
