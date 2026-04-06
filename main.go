@@ -131,7 +131,7 @@ func (s *server) puzzleAuth(w http.ResponseWriter, r *http.Request) {
 	}
 	if subtle.ConstantTimeCompare(
 		[]byte(r.FormValue("password")),
-		[]byte(os.Getenv("PUZZLE_PASSWORD")),
+		[]byte(os.Getenv("SECRET_ALBUM_PASSWORD")),
 	) != 1 {
 		http.Error(w, "no", http.StatusUnauthorized)
 		return
@@ -181,7 +181,7 @@ func (s *server) servePhoto(w http.ResponseWriter, r *http.Request) {
 	isAdmin := auth.GetAdminUser(r) != ""
 	switch meta.Access {
 	case gallery.AccessSecret:
-		if !isAdmin && !auth.IsSecretAuthed(r) {
+		if !isAdmin && !auth.IsSecretAuthed(r) && !auth.IsPuzzleAuthed(r) {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
