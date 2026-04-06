@@ -25,8 +25,14 @@
           <option value="secret">Private</option>
         </select>
         <input type="file" name="file" id="file-input" accept="image/*" class="admin-file-input" multiple>
-        <button type="submit" class="admin-btn">Upload</button>
+        <button type="submit" class="admin-btn" id="upload-btn">Upload</button>
       </form>
+      <div id="progress-wrap" class="progress-wrap" style="display:none">
+        <div class="progress-bar-track">
+          <div class="progress-bar-fill" id="progress-fill"></div>
+        </div>
+        <span id="progress-label" class="progress-label">0%</span>
+      </div>
       <p id="upload-status" class="upload-status"></p>
     </section>
 
@@ -69,26 +75,52 @@
   </main>
 
   <script>
-    // Upload
-    document.getElementById('upload-form').addEventListener('submit', async (e) => {
+    // Upload via XHR for progress events
+    document.getElementById('upload-form').addEventListener('submit', (e) => {
       e.preventDefault();
-      const status = document.getElementById('upload-status');
-      const form = new FormData(e.target);
-      status.textContent = 'Uploading…';
-      try {
-        const r = await fetch('/admin/upload', { method: 'POST', body: form });
-        if (r.ok) {
-          status.textContent = 'Uploaded. Reload to see it.';
+      const status   = document.getElementById('upload-status');
+      const wrap     = document.getElementById('progress-wrap');
+      const fill     = document.getElementById('progress-fill');
+      const label    = document.getElementById('progress-label');
+      const btn      = document.getElementById('upload-btn');
+      const form     = new FormData(e.target);
+
+      status.textContent = '';
+      wrap.style.display = 'flex';
+      fill.style.width = '0%';
+      label.textContent = '0%';
+      btn.disabled = true;
+
+      const xhr = new XMLHttpRequest();
+
+      xhr.upload.onprogress = (ev) => {
+        if (!ev.lengthComputable) return;
+        const pct = Math.round(ev.loaded / ev.total * 100);
+        fill.style.width = pct + '%';
+        label.textContent = pct + '%';
+      };
+
+      xhr.onload = () => {
+        btn.disabled = false;
+        wrap.style.display = 'none';
+        if (xhr.status >= 200 && xhr.status < 300) {
+          status.textContent = 'Done — reload to see new photos.';
           status.style.color = '#4caf50';
         } else {
-          const t = await r.text();
-          status.textContent = 'Error: ' + t;
+          status.textContent = 'Error ' + xhr.status + ': ' + xhr.responseText;
           status.style.color = '#f44336';
         }
-      } catch (err) {
-        status.textContent = 'Error: ' + err;
+      };
+
+      xhr.onerror = () => {
+        btn.disabled = false;
+        wrap.style.display = 'none';
+        status.textContent = 'Network error — check file size and try again.';
         status.style.color = '#f44336';
-      }
+      };
+
+      xhr.open('POST', '/admin/upload');
+      xhr.send(form);
     });
 
     // Delete
