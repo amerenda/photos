@@ -116,7 +116,7 @@ body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--t
 .puzzle-wink:hover { transform: scale(1.15); }
 
 /* ── Hero section ──────────────────────────────────── */
-.gallery-grid-section { padding: 0.5rem 0.5rem 4rem; }
+.gallery-grid-section { padding: 0 0 4rem; }
 
 /* ── Lightbox ──────────────────────────────────────── */
 .lb-overlay {
