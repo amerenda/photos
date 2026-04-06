@@ -136,7 +136,7 @@ func (s *server) adminPortal(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) adminUpload(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseMultipartForm(50 << 20); err != nil {
+	if err := r.ParseMultipartForm(200 << 20); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
@@ -147,32 +147,37 @@ func (s *server) adminUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	file, header, err := r.FormFile("file")
-	if err != nil {
+	allowed := map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true}
+	headers := r.MultipartForm.File["file"]
+	if len(headers) == 0 {
 		http.Error(w, "missing file", http.StatusBadRequest)
 		return
 	}
-	defer file.Close()
 
-	ext := strings.ToLower(filepath.Ext(header.Filename))
-	allowed := map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true}
-	if !allowed[ext] {
-		http.Error(w, "unsupported file type", http.StatusBadRequest)
-		return
+	for _, header := range headers {
+		ext := strings.ToLower(filepath.Ext(header.Filename))
+		if !allowed[ext] {
+			log.Printf("upload skipped unsupported type: %s", header.Filename)
+			continue
+		}
+		file, err := header.Open()
+		if err != nil {
+			log.Printf("upload open error %s: %v", header.Filename, err)
+			continue
+		}
+		name := filepath.Base(header.Filename)
+		dest := filepath.Join(dir, name)
+		f, err := os.Create(dest)
+		if err != nil {
+			file.Close()
+			log.Printf("upload create error %s: %v", name, err)
+			continue
+		}
+		io.Copy(f, file)
+		f.Close()
+		file.Close()
+		log.Printf("uploaded %s to %s", name, album)
 	}
-
-	// Sanitise filename: keep only the base name
-	name := filepath.Base(header.Filename)
-	dest := filepath.Join(dir, name)
-
-	f, err := os.Create(dest)
-	if err != nil {
-		log.Printf("upload create error: %v", err)
-		http.Error(w, "server error", http.StatusInternalServerError)
-		return
-	}
-	defer f.Close()
-	io.Copy(f, file)
 
 	w.WriteHeader(http.StatusNoContent)
 }
