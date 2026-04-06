@@ -134,9 +134,10 @@ func MigrateIfNeeded(photosDir string) error {
 	}
 
 	albums := Albums{
-		"photos": {Access: AccessPublic},
-		"nsfw":   {Access: AccessSecret},
-		"hidden": {Access: AccessPuzzle},
+		"photos":        {Access: AccessPublic},
+		"nsfw":          {Access: AccessSecret},
+		"hidden":        {Access: AccessPuzzle},
+		"puzzle_reward": {Access: AccessPuzzle},
 	}
 
 	migrate := func(oldName, newName string) error {
@@ -172,8 +173,10 @@ func MigrateIfNeeded(photosDir string) error {
 	if err := migrate("secret", "nsfw"); err != nil {
 		return fmt.Errorf("migrate secret→nsfw: %w", err)
 	}
-	if err := os.MkdirAll(filepath.Join(photosDir, "hidden"), 0755); err != nil {
-		return fmt.Errorf("create hidden dir: %w", err)
+	for _, name := range []string{"hidden", "puzzle_reward"} {
+		if err := os.MkdirAll(filepath.Join(photosDir, name), 0755); err != nil {
+			return fmt.Errorf("create %s dir: %w", name, err)
+		}
 	}
 
 	return SaveAlbums(photosDir, albums)

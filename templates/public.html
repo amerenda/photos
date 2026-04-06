@@ -41,6 +41,16 @@
   <div class="empty-state">No photos yet.</div>
   {{end}}
 
+  <!-- Puzzle modal (shown only after Konami code / title taps) -->
+  <div id="puzzle-overlay" class="puzzle-overlay">
+    <div id="puzzle-card" class="puzzle-card">
+      <form id="puzzle-form">
+        <input id="puzzle-input" type="password" class="puzzle-input" autocomplete="off" spellcheck="false">
+        <button id="puzzle-submit" type="submit" class="puzzle-btn">→</button>
+      </form>
+    </div>
+  </div>
+
   <!-- Lightbox -->
   <div id="lb" class="lb-overlay" role="dialog" aria-modal="true">
     <button id="lb-prev" class="lb-nav" aria-label="Previous" onclick="prevPhoto()">&#8249;</button>
@@ -131,9 +141,10 @@
                     'ArrowLeft','ArrowRight','ArrowLeft','ArrowRight','b','a'];
     let ki = 0;
     document.addEventListener('keydown', e => {
+      if (lb.classList.contains('open')) return; // don't interfere with lightbox
       if (e.key === KONAMI[ki]) {
         ki++;
-        if (ki === KONAMI.length) { ki = 0; triggerEasterEgg(); }
+        if (ki === KONAMI.length) { ki = 0; openPuzzleModal(); }
       } else {
         ki = (e.key === KONAMI[0]) ? 1 : 0;
       }
@@ -144,17 +155,53 @@
       tapCount++;
       clearTimeout(tapTimer);
       tapTimer = setTimeout(() => { tapCount = 0; }, 3000);
-      if (tapCount >= 7) { tapCount = 0; triggerEasterEgg(); }
+      if (tapCount >= 7) { tapCount = 0; openPuzzleModal(); }
     });
 
-    async function triggerEasterEgg() {
-      const msg = document.createElement('div');
-      msg.className = 'konami-reveal';
-      msg.textContent = '🐱 you found something...';
-      document.body.appendChild(msg);
-      await fetch('/p/unlock', {method: 'POST'});
-      setTimeout(() => { window.location.href = '/p'; }, 1600);
+    // ── Puzzle modal ────────────────────────────────────
+    const puzzleOverlay = document.getElementById('puzzle-overlay');
+    const puzzleInput   = document.getElementById('puzzle-input');
+
+    function openPuzzleModal() {
+      puzzleOverlay.classList.add('open');
+      puzzleInput.value = '';
+      puzzleInput.focus();
     }
+
+    function closePuzzleModal() {
+      puzzleOverlay.classList.remove('open');
+    }
+
+    puzzleOverlay.addEventListener('click', e => {
+      if (e.target === puzzleOverlay) closePuzzleModal();
+    });
+
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && puzzleOverlay.classList.contains('open')) closePuzzleModal();
+    });
+
+    document.getElementById('puzzle-form').addEventListener('submit', async e => {
+      e.preventDefault();
+      const btn = document.getElementById('puzzle-submit');
+      btn.disabled = true;
+      const r = await fetch('/p/auth', {
+        method: 'POST',
+        body: new URLSearchParams({password: puzzleInput.value}),
+      });
+      if (r.ok) {
+        // Show 😉
+        document.getElementById('puzzle-card').innerHTML =
+          '<a href="/reward" class="puzzle-wink" title="">😉</a>';
+      } else {
+        // Shake and let them try again
+        puzzleInput.classList.remove('shake');
+        void puzzleInput.offsetWidth; // reflow to restart animation
+        puzzleInput.classList.add('shake');
+        puzzleInput.value = '';
+        puzzleInput.focus();
+        btn.disabled = false;
+      }
+    });
   </script>
 </body>
 </html>

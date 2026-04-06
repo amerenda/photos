@@ -54,9 +54,10 @@ func main() {
 	mux.HandleFunc("POST /s/auth", s.secretAuth)
 	mux.HandleFunc("GET /s/gallery", auth.RequireSecret(s.secretGallery))
 
-	// Puzzle album (Konami code)
-	mux.HandleFunc("POST /p/unlock", s.puzzleUnlock)
+	// Puzzle album (Konami code + password)
+	mux.HandleFunc("POST /p/auth", s.puzzleAuth)
 	mux.HandleFunc("GET /p", auth.RequirePuzzle(s.puzzleGallery))
+	mux.HandleFunc("GET /reward", auth.RequirePuzzle(s.puzzleRewardGallery))
 
 	// Photo serving (album-aware auth)
 	mux.HandleFunc("GET /photos/{album}/{file}", s.servePhoto)
@@ -121,9 +122,20 @@ func (s *server) secretGallery(w http.ResponseWriter, r *http.Request) {
 	render(w, "secret.html", map[string]any{"Photos": photos})
 }
 
-// ── Puzzle album (Konami code) ──────────────────────────────────────────────
+// ── Puzzle album (Konami code + password) ───────────────────────────────────
 
-func (s *server) puzzleUnlock(w http.ResponseWriter, r *http.Request) {
+func (s *server) puzzleAuth(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	if subtle.ConstantTimeCompare(
+		[]byte(r.FormValue("password")),
+		[]byte(os.Getenv("PUZZLE_PASSWORD")),
+	) != 1 {
+		http.Error(w, "no", http.StatusUnauthorized)
+		return
+	}
 	auth.SetPuzzleCookie(w)
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -132,6 +144,16 @@ func (s *server) puzzleGallery(w http.ResponseWriter, r *http.Request) {
 	albums, _ := gallery.LoadAlbums(s.photosDir)
 	photos := gallery.PhotoURLs(s.photosDir, albums, gallery.AccessPuzzle)
 	render(w, "puzzle.html", map[string]any{"Photos": photos})
+}
+
+func (s *server) puzzleRewardGallery(w http.ResponseWriter, r *http.Request) {
+	dir := filepath.Join(s.photosDir, "puzzle_reward")
+	photos := gallery.ListImages(dir)
+	var urls []string
+	for _, p := range photos {
+		urls = append(urls, "/photos/puzzle_reward/"+p)
+	}
+	render(w, "puzzle.html", map[string]any{"Photos": gallery.Shuffle(urls)})
 }
 
 // ── Photo serving ────────────────────────────────────────────────────────────
