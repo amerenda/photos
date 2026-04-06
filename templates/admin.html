@@ -22,7 +22,7 @@
       <form id="upload-form" enctype="multipart/form-data">
         <select name="album" id="album-select" class="admin-select">
           {{range .Albums}}
-          <option value="{{.Name}}">{{.Name}}{{if .Secret}} (private){{end}}</option>
+          <option value="{{.Name}}">{{.Name}} ({{.Access}})</option>
           {{end}}
           <option value="__new__">+ New album…</option>
         </select>
@@ -31,11 +31,13 @@
       </form>
 
       <!-- Shown when "+ New album" is selected -->
-      <div id="new-album-inline" style="display:none; margin-top:0.75rem; display:none; gap:0.5rem; align-items:center; flex-wrap:wrap;" class="admin-inline-row">
+      <div id="new-album-inline" style="display:none; margin-top:0.75rem; gap:0.5rem; align-items:center; flex-wrap:wrap;" class="admin-inline-row">
         <input type="text" id="new-album-name" placeholder="Album name" class="admin-input" style="max-width:200px">
-        <label class="admin-check-label">
-          <input type="checkbox" id="new-album-secret"> Private
-        </label>
+        <select id="new-album-access" class="admin-select">
+          <option value="public">Public</option>
+          <option value="secret">Secret (password)</option>
+          <option value="puzzle">Puzzle (Konami)</option>
+        </select>
       </div>
 
       <div id="progress-wrap" class="progress-wrap" style="display:none">
@@ -52,9 +54,11 @@
       <h2>Create Album</h2>
       <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
         <input type="text" id="create-album-name" placeholder="Album name" class="admin-input">
-        <label class="admin-check-label">
-          <input type="checkbox" id="create-album-secret"> Private
-        </label>
+        <select id="create-album-access" class="admin-select">
+          <option value="public">Public</option>
+          <option value="secret">Secret (password)</option>
+          <option value="puzzle">Puzzle (Konami)</option>
+        </select>
         <button class="admin-btn" onclick="createAlbum()">Create</button>
       </div>
       <p id="create-status" class="upload-status"></p>
@@ -65,7 +69,9 @@
     <section class="admin-section" id="album-section-{{.Name}}">
       <h2>
         {{.Name}}
-        {{if .Secret}}<span class="album-badge private">private</span>{{else}}<span class="album-badge public">public</span>{{end}}
+        {{if eq .Access "secret"}}<span class="album-badge private">secret</span>
+        {{else if eq .Access "puzzle"}}<span class="album-badge puzzle">puzzle</span>
+        {{else}}<span class="album-badge public">public</span>{{end}}
         <span class="photo-count">({{len .Photos}})</span>
         <button class="admin-btn-danger" onclick="deleteAlbum('{{.Name}}')">Delete album</button>
       </h2>
@@ -122,8 +128,8 @@
 
       // Create new album first if needed
       if (albumName === '__new__') {
-        const name = document.getElementById('new-album-name').value.trim();
-        const secret = document.getElementById('new-album-secret').checked;
+        const name   = document.getElementById('new-album-name').value.trim();
+        const access = document.getElementById('new-album-access').value;
         if (!name) {
           status.textContent = 'Enter a name for the new album.';
           status.style.color = 'var(--danger)';
@@ -132,7 +138,7 @@
         }
         const r = await fetch('/admin/album', {
           method: 'POST',
-          body: new URLSearchParams({name, secret: secret ? 'on' : ''}),
+          body: new URLSearchParams({name, access}),
         });
         if (!r.ok) {
           status.textContent = 'Create album failed: ' + await r.text();
@@ -141,8 +147,7 @@
           return;
         }
         albumName = name;
-        // Add to select and update all transfer dropdowns
-        const opt = new Option(name + (secret ? ' (private)' : ''), name);
+        const opt = new Option(name + ' (' + access + ')', name);
         albumSelect.insertBefore(opt, albumSelect.querySelector('option[value="__new__"]'));
       }
 
@@ -184,12 +189,12 @@
     // ── Create album (standalone) ─────────────────────────
     async function createAlbum() {
       const name   = document.getElementById('create-album-name').value.trim();
-      const secret = document.getElementById('create-album-secret').checked;
+      const access = document.getElementById('create-album-access').value;
       const status = document.getElementById('create-status');
       if (!name) { status.textContent = 'Enter a name.'; status.style.color = 'var(--danger)'; return; }
       const r = await fetch('/admin/album', {
         method: 'POST',
-        body: new URLSearchParams({name, secret: secret ? 'on' : ''}),
+        body: new URLSearchParams({name, access}),
       });
       if (r.ok) {
         status.textContent = 'Created — reload to manage it.';

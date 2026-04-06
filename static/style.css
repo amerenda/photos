@@ -81,6 +81,22 @@ body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--t
 }
 .login-btn:hover { opacity: 0.85; }
 
+/* ── Konami easter egg ─────────────────────────────── */
+@keyframes konami-reveal {
+  0%   { opacity: 0; transform: scale(0.85); }
+  15%  { opacity: 1; transform: scale(1); }
+  80%  { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.08); }
+}
+.konami-reveal {
+  position: fixed; inset: 0; z-index: 9999;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.75);
+  color: #fff; font-size: clamp(1.4rem, 4vw, 2.2rem); font-weight: 600;
+  letter-spacing: 0.04em; pointer-events: none;
+  animation: konami-reveal 1.6s ease-in-out forwards;
+}
+
 /* ── Hero section ──────────────────────────────────── */
 .gallery-grid-section { padding: 2rem 1rem 4rem; }
 
@@ -135,6 +151,7 @@ body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--t
 }
 .album-badge.public  { background: rgba(124,108,250,0.2); color: var(--accent); }
 .album-badge.private { background: rgba(224,86,86,0.2);  color: var(--danger); }
+.album-badge.puzzle  { background: rgba(255,180,0,0.15);  color: #f0b400; }
 
 .admin-btn-danger {
   padding: 0.3rem 0.8rem; background: transparent;

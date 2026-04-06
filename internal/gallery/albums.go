@@ -8,15 +8,23 @@ import (
 	"sort"
 )
 
+const (
+	AccessPublic = "public"
+	AccessSecret = "secret"
+	AccessPuzzle = "puzzle"
+)
+
 // AlbumMeta holds metadata for a single album.
 type AlbumMeta struct {
-	Secret bool `json:"secret"`
+	Access string `json:"access"` // "public", "secret", "puzzle"
+	Secret bool   `json:"secret,omitempty"` // legacy field — migrated on load
 }
 
 // Albums maps album name → metadata.
 type Albums map[string]AlbumMeta
 
 // LoadAlbums reads albums.json from photosDir. Returns empty map if not found.
+// Migrates legacy {secret:true/false} entries to the Access string format.
 func LoadAlbums(photosDir string) (Albums, error) {
 	data, err := os.ReadFile(filepath.Join(photosDir, "albums.json"))
 	if os.IsNotExist(err) {
@@ -26,7 +34,27 @@ func LoadAlbums(photosDir string) (Albums, error) {
 		return nil, err
 	}
 	var a Albums
-	return a, json.Unmarshal(data, &a)
+	if err := json.Unmarshal(data, &a); err != nil {
+		return nil, err
+	}
+	// Migrate legacy entries that lack an Access field
+	changed := false
+	for name, meta := range a {
+		if meta.Access == "" {
+			if meta.Secret {
+				meta.Access = AccessSecret
+			} else {
+				meta.Access = AccessPublic
+			}
+			meta.Secret = false
+			a[name] = meta
+			changed = true
+		}
+	}
+	if changed {
+		_ = SaveAlbums(photosDir, a) // best-effort in-place migration
+	}
+	return a, nil
 }
 
 // SaveAlbums writes albums.json to photosDir.
@@ -39,7 +67,10 @@ func SaveAlbums(photosDir string, albums Albums) error {
 }
 
 // CreateAlbum creates a new album directory and registers it in albums.json.
-func CreateAlbum(photosDir, name string, secret bool) error {
+func CreateAlbum(photosDir, name, access string) error {
+	if access == "" {
+		access = AccessPublic
+	}
 	albums, err := LoadAlbums(photosDir)
 	if err != nil {
 		return err
@@ -50,7 +81,7 @@ func CreateAlbum(photosDir, name string, secret bool) error {
 	if err := os.MkdirAll(filepath.Join(photosDir, name), 0755); err != nil {
 		return err
 	}
-	albums[name] = AlbumMeta{Secret: secret}
+	albums[name] = AlbumMeta{Access: access}
 	return SaveAlbums(photosDir, albums)
 }
 
@@ -78,11 +109,11 @@ func SortedNames(albums Albums) []string {
 }
 
 // PhotoURLs returns shuffled /photos/<album>/<file> URL strings for all
-// albums matching the given secret flag.
-func PhotoURLs(photosDir string, albums Albums, secret bool) []string {
+// albums matching the given access type.
+func PhotoURLs(photosDir string, albums Albums, access string) []string {
 	var urls []string
 	for name, meta := range albums {
-		if meta.Secret != secret {
+		if meta.Access != access {
 			continue
 		}
 		dir := filepath.Join(photosDir, name)
@@ -103,8 +134,9 @@ func MigrateIfNeeded(photosDir string) error {
 	}
 
 	albums := Albums{
-		"photos": {Secret: false},
-		"nsfw":   {Secret: true},
+		"photos": {Access: AccessPublic},
+		"nsfw":   {Access: AccessSecret},
+		"hidden": {Access: AccessPuzzle},
 	}
 
 	migrate := func(oldName, newName string) error {
@@ -139,6 +171,9 @@ func MigrateIfNeeded(photosDir string) error {
 	}
 	if err := migrate("secret", "nsfw"); err != nil {
 		return fmt.Errorf("migrate secret→nsfw: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Join(photosDir, "hidden"), 0755); err != nil {
+		return fmt.Errorf("create hidden dir: %w", err)
 	}
 
 	return SaveAlbums(photosDir, albums)

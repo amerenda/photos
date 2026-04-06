@@ -18,8 +18,10 @@ import (
 const (
 	adminCookie  = "photos_admin"
 	secretCookie = "photos_secret"
+	puzzleCookie = "photos_puzzle"
 	adminTTL     = 7 * 24 * time.Hour
 	secretTTL    = 24 * time.Hour
+	puzzleTTL    = 30 * 24 * time.Hour
 )
 
 var (
@@ -101,6 +103,39 @@ func IsSecretAuthed(r *http.Request) bool {
 	return verifyToken(c.Value) == "secret"
 }
 
+// IsPuzzleAuthed returns true if the request has a valid puzzle album session.
+func IsPuzzleAuthed(r *http.Request) bool {
+	c, err := r.Cookie(puzzleCookie)
+	if err != nil {
+		return false
+	}
+	return verifyToken(c.Value) == "puzzle"
+}
+
+// SetPuzzleCookie writes the puzzle session cookie (long TTL — finding it is the hard part).
+func SetPuzzleCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     puzzleCookie,
+		Value:    makeToken("puzzle", puzzleTTL),
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   int(puzzleTTL.Seconds()),
+	})
+}
+
+// RequirePuzzle wraps a handler, redirecting to / if not authed.
+func RequirePuzzle(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !IsPuzzleAuthed(r) {
+			http.Redirect(w, r, "/", http.StatusFound)
+			return
+		}
+		next(w, r)
+	}
+}
+
 // SetAdminCookie writes the admin session cookie.
 func SetAdminCookie(w http.ResponseWriter, username string) {
 	http.SetCookie(w, &http.Cookie{
@@ -129,7 +164,7 @@ func SetSecretCookie(w http.ResponseWriter) {
 
 // ClearCookies clears all session cookies.
 func ClearCookies(w http.ResponseWriter) {
-	for _, name := range []string{adminCookie, secretCookie} {
+	for _, name := range []string{adminCookie, secretCookie, puzzleCookie} {
 		http.SetCookie(w, &http.Cookie{
 			Name:   name,
 			Value:  "",

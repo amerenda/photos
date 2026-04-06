@@ -3,31 +3,30 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Gallery</title>
+  <title>Found It</title>
   <link rel="stylesheet" href="/static/splide.min.css">
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body class="gallery-body">
 
   <header class="site-header">
-    <span class="site-title">Gallery</span>
+    <span class="site-title">Found It</span>
+    <a href="/logout" class="header-link">Forget</a>
   </header>
 
   {{if .Photos}}
-  <!-- Hero slideshow — click any slide to open lightbox -->
-  <section id="main-splide" class="splide fullscreen-splide" aria-label="Photo gallery">
+  <section id="main-splide" class="splide fullscreen-splide" aria-label="Hidden photo gallery">
     <div class="splide__track">
       <ul class="splide__list">
         {{range $i, $p := .Photos}}
         <li class="splide__slide" onclick="openLightbox({{$i}})" style="cursor:zoom-in">
-          <img src="{{$p}}" alt="Gallery photo" loading="lazy">
+          <img src="{{$p}}" alt="Hidden photo" loading="lazy">
         </li>
         {{end}}
       </ul>
     </div>
   </section>
 
-  <!-- Photo grid -->
   <section class="gallery-grid-section">
     <div class="photo-grid">
       {{range $i, $p := .Photos}}
@@ -38,10 +37,9 @@
     </div>
   </section>
   {{else}}
-  <div class="empty-state">No photos yet.</div>
+  <div class="empty-state">Nothing here yet.</div>
   {{end}}
 
-  <!-- Lightbox -->
   <div id="lb" class="lb-overlay" role="dialog" aria-modal="true">
     <button id="lb-prev" class="lb-nav" aria-label="Previous" onclick="prevPhoto()">&#8249;</button>
     <img id="lb-img" src="" alt="">
@@ -64,7 +62,6 @@
       heightRatio:  1,
     }).mount();
 
-    // ── Lightbox ────────────────────────────────────────
     const photos  = [{{range .Photos}}"{{.}}",{{end}}];
     let current   = 0;
     let hideTimer = null;
@@ -123,38 +120,6 @@
       const dx = e.changedTouches[0].clientX - touchStartX;
       if (Math.abs(dx) > 50) dx < 0 ? nextPhoto() : prevPhoto();
     }, {passive: true});
-
-    // ── Easter egg unlock ───────────────────────────────
-    // Desktop: Konami code  ↑↑↓↓←→←→BA
-    // Mobile:  tap the site title 7 times within 3 seconds
-    const KONAMI = ['ArrowUp','ArrowUp','ArrowDown','ArrowDown',
-                    'ArrowLeft','ArrowRight','ArrowLeft','ArrowRight','b','a'];
-    let ki = 0;
-    document.addEventListener('keydown', e => {
-      if (e.key === KONAMI[ki]) {
-        ki++;
-        if (ki === KONAMI.length) { ki = 0; triggerEasterEgg(); }
-      } else {
-        ki = (e.key === KONAMI[0]) ? 1 : 0;
-      }
-    });
-
-    let tapCount = 0, tapTimer = null;
-    document.querySelector('.site-title').addEventListener('click', () => {
-      tapCount++;
-      clearTimeout(tapTimer);
-      tapTimer = setTimeout(() => { tapCount = 0; }, 3000);
-      if (tapCount >= 7) { tapCount = 0; triggerEasterEgg(); }
-    });
-
-    async function triggerEasterEgg() {
-      const msg = document.createElement('div');
-      msg.className = 'konami-reveal';
-      msg.textContent = '🐱 you found something...';
-      document.body.appendChild(msg);
-      await fetch('/p/unlock', {method: 'POST'});
-      setTimeout(() => { window.location.href = '/p'; }, 1600);
-    }
   </script>
 </body>
 </html>

@@ -23,7 +23,6 @@ var assets embed.FS
 
 var tmpl *template.Template
 
-// safeAlbumName allows only letters, digits, hyphens, underscores.
 var safeAlbumName = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 type server struct {
@@ -38,7 +37,6 @@ func main() {
 		log.Fatalf("migration failed: %v", err)
 	}
 
-	// Seed default albums if empty
 	gallery.SeedIfEmpty(filepath.Join(photosDir, "photos"), gallery.BirdSeedURLs)
 	gallery.SeedIfEmpty(filepath.Join(photosDir, "nsfw"), gallery.CatSeedURLs)
 
@@ -46,16 +44,19 @@ func main() {
 
 	mux := http.NewServeMux()
 
-	// Static assets
 	mux.Handle("GET /static/", http.FileServerFS(assets))
 
 	// Public gallery
 	mux.HandleFunc("GET /", s.publicGallery)
 
-	// Secret album
+	// Secret album (password)
 	mux.HandleFunc("GET /s", s.secretLogin)
 	mux.HandleFunc("POST /s/auth", s.secretAuth)
 	mux.HandleFunc("GET /s/gallery", auth.RequireSecret(s.secretGallery))
+
+	// Puzzle album (Konami code)
+	mux.HandleFunc("POST /p/unlock", s.puzzleUnlock)
+	mux.HandleFunc("GET /p", auth.RequirePuzzle(s.puzzleGallery))
 
 	// Photo serving (album-aware auth)
 	mux.HandleFunc("GET /photos/{album}/{file}", s.servePhoto)
@@ -73,7 +74,6 @@ func main() {
 	mux.HandleFunc("POST /admin/photo/move", auth.RequireAdmin(s.adminMovePhoto))
 	mux.HandleFunc("POST /admin/photo/copy", auth.RequireAdmin(s.adminCopyPhoto))
 
-	// Utility
 	mux.HandleFunc("GET /logout", s.logout)
 	mux.HandleFunc("GET /health", health)
 
@@ -85,11 +85,11 @@ func main() {
 
 func (s *server) publicGallery(w http.ResponseWriter, r *http.Request) {
 	albums, _ := gallery.LoadAlbums(s.photosDir)
-	photos := gallery.PhotoURLs(s.photosDir, albums, false)
+	photos := gallery.PhotoURLs(s.photosDir, albums, gallery.AccessPublic)
 	render(w, "public.html", map[string]any{"Photos": photos})
 }
 
-// ── Secret album ────────────────────────────────────────────────────────────
+// ── Secret album (password) ─────────────────────────────────────────────────
 
 func (s *server) secretLogin(w http.ResponseWriter, r *http.Request) {
 	if auth.IsSecretAuthed(r) {
@@ -104,10 +104,10 @@ func (s *server) secretAuth(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	submitted := r.FormValue("password")
-	expected := os.Getenv("SECRET_ALBUM_PASSWORD")
-
-	if subtle.ConstantTimeCompare([]byte(submitted), []byte(expected)) != 1 {
+	if subtle.ConstantTimeCompare(
+		[]byte(r.FormValue("password")),
+		[]byte(os.Getenv("SECRET_ALBUM_PASSWORD")),
+	) != 1 {
 		render(w, "secret_login.html", map[string]any{"Error": "Incorrect password."})
 		return
 	}
@@ -117,8 +117,21 @@ func (s *server) secretAuth(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) secretGallery(w http.ResponseWriter, r *http.Request) {
 	albums, _ := gallery.LoadAlbums(s.photosDir)
-	photos := gallery.PhotoURLs(s.photosDir, albums, true)
+	photos := gallery.PhotoURLs(s.photosDir, albums, gallery.AccessSecret)
 	render(w, "secret.html", map[string]any{"Photos": photos})
+}
+
+// ── Puzzle album (Konami code) ──────────────────────────────────────────────
+
+func (s *server) puzzleUnlock(w http.ResponseWriter, r *http.Request) {
+	auth.SetPuzzleCookie(w)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *server) puzzleGallery(w http.ResponseWriter, r *http.Request) {
+	albums, _ := gallery.LoadAlbums(s.photosDir)
+	photos := gallery.PhotoURLs(s.photosDir, albums, gallery.AccessPuzzle)
+	render(w, "puzzle.html", map[string]any{"Photos": photos})
 }
 
 // ── Photo serving ────────────────────────────────────────────────────────────
@@ -142,9 +155,19 @@ func (s *server) servePhoto(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if meta.Secret && !auth.IsSecretAuthed(r) && auth.GetAdminUser(r) == "" {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return
+
+	isAdmin := auth.GetAdminUser(r) != ""
+	switch meta.Access {
+	case gallery.AccessSecret:
+		if !isAdmin && !auth.IsSecretAuthed(r) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+	case gallery.AccessPuzzle:
+		if !isAdmin && !auth.IsPuzzleAuthed(r) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
 	}
 
 	serveImage(w, r, filepath.Join(s.photosDir, albumName), file)
@@ -154,7 +177,7 @@ func (s *server) servePhoto(w http.ResponseWriter, r *http.Request) {
 
 type albumView struct {
 	Name   string
-	Secret bool
+	Access string
 	Photos []string
 }
 
@@ -165,7 +188,7 @@ func (s *server) adminPortal(w http.ResponseWriter, r *http.Request) {
 		meta := albums[name]
 		views = append(views, albumView{
 			Name:   name,
-			Secret: meta.Secret,
+			Access: meta.Access,
 			Photos: gallery.ListImages(filepath.Join(s.photosDir, name)),
 		})
 	}
@@ -185,12 +208,15 @@ func (s *server) adminCreateAlbum(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid album name (letters, digits, - _ only)", http.StatusBadRequest)
 		return
 	}
-	secret := r.FormValue("secret") == "on" || r.FormValue("secret") == "true"
-	if err := gallery.CreateAlbum(s.photosDir, name, secret); err != nil {
+	access := r.FormValue("access")
+	if access != gallery.AccessPublic && access != gallery.AccessSecret && access != gallery.AccessPuzzle {
+		access = gallery.AccessPublic
+	}
+	if err := gallery.CreateAlbum(s.photosDir, name, access); err != nil {
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	}
-	log.Printf("created album %q secret=%v", name, secret)
+	log.Printf("created album %q access=%s", name, access)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -281,13 +307,8 @@ func (s *server) adminDelete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *server) adminMovePhoto(w http.ResponseWriter, r *http.Request) {
-	s.transferPhoto(w, r, true)
-}
-
-func (s *server) adminCopyPhoto(w http.ResponseWriter, r *http.Request) {
-	s.transferPhoto(w, r, false)
-}
+func (s *server) adminMovePhoto(w http.ResponseWriter, r *http.Request) { s.transferPhoto(w, r, true) }
+func (s *server) adminCopyPhoto(w http.ResponseWriter, r *http.Request) { s.transferPhoto(w, r, false) }
 
 func (s *server) transferPhoto(w http.ResponseWriter, r *http.Request, move bool) {
 	if err := r.ParseForm(); err != nil {
