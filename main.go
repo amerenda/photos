@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/subtle"
 	"embed"
+	"fmt"
 	"html/template"
 	"io"
 	"log"
@@ -10,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/amerenda/photos/internal/auth"
@@ -21,23 +23,24 @@ var assets embed.FS
 
 var tmpl *template.Template
 
+// safeAlbumName allows only letters, digits, hyphens, underscores.
+var safeAlbumName = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+
 type server struct {
-	publicDir string
-	secretDir string
+	photosDir string
 }
 
 func main() {
 	photosDir := envOr("PHOTOS_DIR", "/photos")
-	s := &server{
-		publicDir: filepath.Join(photosDir, "public"),
-		secretDir: filepath.Join(photosDir, "secret"),
+	s := &server{photosDir: photosDir}
+
+	if err := gallery.MigrateIfNeeded(photosDir); err != nil {
+		log.Fatalf("migration failed: %v", err)
 	}
 
-	os.MkdirAll(s.publicDir, 0755)
-	os.MkdirAll(s.secretDir, 0755)
-
-	gallery.SeedIfEmpty(s.publicDir, gallery.BirdSeedURLs)
-	gallery.SeedIfEmpty(s.secretDir, gallery.CatSeedURLs)
+	// Seed default albums if empty
+	gallery.SeedIfEmpty(filepath.Join(photosDir, "photos"), gallery.BirdSeedURLs)
+	gallery.SeedIfEmpty(filepath.Join(photosDir, "nsfw"), gallery.CatSeedURLs)
 
 	tmpl = template.Must(template.ParseFS(assets, "templates/*.html"))
 
@@ -46,24 +49,29 @@ func main() {
 	// Static assets
 	mux.Handle("GET /static/", http.FileServerFS(assets))
 
-	// Public gallery — no auth
+	// Public gallery
 	mux.HandleFunc("GET /", s.publicGallery)
-	mux.HandleFunc("GET /photos/public/{file}", s.servePublicPhoto)
 
 	// Secret album
 	mux.HandleFunc("GET /s", s.secretLogin)
 	mux.HandleFunc("POST /s/auth", s.secretAuth)
 	mux.HandleFunc("GET /s/gallery", auth.RequireSecret(s.secretGallery))
-	mux.HandleFunc("GET /photos/secret/{file}", s.serveSecretPhoto)
+
+	// Photo serving (album-aware auth)
+	mux.HandleFunc("GET /photos/{album}/{file}", s.servePhoto)
 
 	// GitHub OAuth
 	mux.HandleFunc("GET /auth/login", auth.LoginHandler)
 	mux.HandleFunc("GET /auth/callback", auth.CallbackHandler)
 
-	// Admin — GitHub OAuth required
+	// Admin
 	mux.HandleFunc("GET /admin", auth.RequireAdmin(s.adminPortal))
 	mux.HandleFunc("POST /admin/upload", auth.RequireAdmin(s.adminUpload))
 	mux.HandleFunc("DELETE /admin/photo", auth.RequireAdmin(s.adminDelete))
+	mux.HandleFunc("POST /admin/album", auth.RequireAdmin(s.adminCreateAlbum))
+	mux.HandleFunc("DELETE /admin/album", auth.RequireAdmin(s.adminDeleteAlbum))
+	mux.HandleFunc("POST /admin/photo/move", auth.RequireAdmin(s.adminMovePhoto))
+	mux.HandleFunc("POST /admin/photo/copy", auth.RequireAdmin(s.adminCopyPhoto))
 
 	// Utility
 	mux.HandleFunc("GET /logout", s.logout)
@@ -76,13 +84,9 @@ func main() {
 // ── Public gallery ──────────────────────────────────────────────────────────
 
 func (s *server) publicGallery(w http.ResponseWriter, r *http.Request) {
-	photos := gallery.Shuffle(gallery.ListImages(s.publicDir))
+	albums, _ := gallery.LoadAlbums(s.photosDir)
+	photos := gallery.PhotoURLs(s.photosDir, albums, false)
 	render(w, "public.html", map[string]any{"Photos": photos})
-}
-
-func (s *server) servePublicPhoto(w http.ResponseWriter, r *http.Request) {
-	name := r.PathValue("file")
-	serveImage(w, r, s.publicDir, name)
 }
 
 // ── Secret album ────────────────────────────────────────────────────────────
@@ -112,27 +116,96 @@ func (s *server) secretAuth(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) secretGallery(w http.ResponseWriter, r *http.Request) {
-	photos := gallery.Shuffle(gallery.ListImages(s.secretDir))
+	albums, _ := gallery.LoadAlbums(s.photosDir)
+	photos := gallery.PhotoURLs(s.photosDir, albums, true)
 	render(w, "secret.html", map[string]any{"Photos": photos})
 }
 
-func (s *server) serveSecretPhoto(w http.ResponseWriter, r *http.Request) {
-	if !auth.IsSecretAuthed(r) {
+// ── Photo serving ────────────────────────────────────────────────────────────
+
+func (s *server) servePhoto(w http.ResponseWriter, r *http.Request) {
+	albumName := r.PathValue("album")
+	file := r.PathValue("file")
+
+	if !safeAlbumName.MatchString(albumName) {
+		http.Error(w, "invalid album", http.StatusBadRequest)
+		return
+	}
+
+	albums, err := gallery.LoadAlbums(s.photosDir)
+	if err != nil {
+		http.Error(w, "server error", http.StatusInternalServerError)
+		return
+	}
+	meta, ok := albums[albumName]
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	if meta.Secret && !auth.IsSecretAuthed(r) && auth.GetAdminUser(r) == "" {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
-	name := r.PathValue("file")
-	serveImage(w, r, s.secretDir, name)
+
+	serveImage(w, r, filepath.Join(s.photosDir, albumName), file)
 }
 
 // ── Admin ───────────────────────────────────────────────────────────────────
 
+type albumView struct {
+	Name   string
+	Secret bool
+	Photos []string
+}
+
 func (s *server) adminPortal(w http.ResponseWriter, r *http.Request) {
+	albums, _ := gallery.LoadAlbums(s.photosDir)
+	var views []albumView
+	for _, name := range gallery.SortedNames(albums) {
+		meta := albums[name]
+		views = append(views, albumView{
+			Name:   name,
+			Secret: meta.Secret,
+			Photos: gallery.ListImages(filepath.Join(s.photosDir, name)),
+		})
+	}
 	render(w, "admin.html", map[string]any{
-		"User":         auth.GetAdminUser(r),
-		"PublicPhotos": gallery.ListImages(s.publicDir),
-		"SecretPhotos": gallery.ListImages(s.secretDir),
+		"User":   auth.GetAdminUser(r),
+		"Albums": views,
 	})
+}
+
+func (s *server) adminCreateAlbum(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	name := r.FormValue("name")
+	if !safeAlbumName.MatchString(name) {
+		http.Error(w, "invalid album name (letters, digits, - _ only)", http.StatusBadRequest)
+		return
+	}
+	secret := r.FormValue("secret") == "on" || r.FormValue("secret") == "true"
+	if err := gallery.CreateAlbum(s.photosDir, name, secret); err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	log.Printf("created album %q secret=%v", name, secret)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *server) adminDeleteAlbum(w http.ResponseWriter, r *http.Request) {
+	name := r.URL.Query().Get("name")
+	if !safeAlbumName.MatchString(name) {
+		http.Error(w, "invalid album name", http.StatusBadRequest)
+		return
+	}
+	if err := gallery.DeleteAlbum(s.photosDir, name); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	log.Printf("deleted album %q", name)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *server) adminUpload(w http.ResponseWriter, r *http.Request) {
@@ -140,12 +213,17 @@ func (s *server) adminUpload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	album := r.FormValue("album")
-	dir := s.albumDir(album)
-	if dir == "" {
-		http.Error(w, "invalid album", http.StatusBadRequest)
+	albumName := r.FormValue("album")
+	if !safeAlbumName.MatchString(albumName) {
+		http.Error(w, "invalid album name", http.StatusBadRequest)
 		return
 	}
+	albums, _ := gallery.LoadAlbums(s.photosDir)
+	if _, ok := albums[albumName]; !ok {
+		http.Error(w, "album not found", http.StatusBadRequest)
+		return
+	}
+	dir := filepath.Join(s.photosDir, albumName)
 
 	allowed := map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true}
 	headers := r.MultipartForm.File["file"]
@@ -166,8 +244,7 @@ func (s *server) adminUpload(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		name := filepath.Base(header.Filename)
-		dest := filepath.Join(dir, name)
-		f, err := os.Create(dest)
+		f, err := os.Create(filepath.Join(dir, name))
 		if err != nil {
 			file.Close()
 			log.Printf("upload create error %s: %v", name, err)
@@ -176,35 +253,86 @@ func (s *server) adminUpload(w http.ResponseWriter, r *http.Request) {
 		io.Copy(f, file)
 		f.Close()
 		file.Close()
-		log.Printf("uploaded %s to %s", name, album)
+		log.Printf("uploaded %s to %s", name, albumName)
 	}
 
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *server) adminDelete(w http.ResponseWriter, r *http.Request) {
-	album := r.URL.Query().Get("album")
+	albumName := r.URL.Query().Get("album")
 	name := r.URL.Query().Get("name")
-	dir := s.albumDir(album)
-	if dir == "" || name == "" {
+	if !safeAlbumName.MatchString(albumName) || name == "" {
 		http.Error(w, "invalid params", http.StatusBadRequest)
 		return
 	}
-
-	// Prevent path traversal
-	if strings.Contains(name, "/") || strings.Contains(name, "\\") || name == ".." {
+	if strings.ContainsAny(name, "/\\") || name == ".." {
 		http.Error(w, "invalid filename", http.StatusBadRequest)
 		return
 	}
-
-	path := filepath.Join(dir, filepath.Base(name))
-	if err := os.Remove(path); err != nil {
+	if err := os.Remove(filepath.Join(s.photosDir, albumName, filepath.Base(name))); err != nil {
 		if os.IsNotExist(err) {
 			http.Error(w, "not found", http.StatusNotFound)
 		} else {
 			http.Error(w, "server error", http.StatusInternalServerError)
 		}
 		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *server) adminMovePhoto(w http.ResponseWriter, r *http.Request) {
+	s.transferPhoto(w, r, true)
+}
+
+func (s *server) adminCopyPhoto(w http.ResponseWriter, r *http.Request) {
+	s.transferPhoto(w, r, false)
+}
+
+func (s *server) transferPhoto(w http.ResponseWriter, r *http.Request, move bool) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	fromAlbum := r.FormValue("from_album")
+	toAlbum := r.FormValue("to_album")
+	name := r.FormValue("name")
+
+	if !safeAlbumName.MatchString(fromAlbum) || !safeAlbumName.MatchString(toAlbum) {
+		http.Error(w, "invalid album name", http.StatusBadRequest)
+		return
+	}
+	if strings.ContainsAny(name, "/\\") || name == ".." || name == "" {
+		http.Error(w, "invalid filename", http.StatusBadRequest)
+		return
+	}
+
+	albums, _ := gallery.LoadAlbums(s.photosDir)
+	if _, ok := albums[fromAlbum]; !ok {
+		http.Error(w, "source album not found", http.StatusBadRequest)
+		return
+	}
+	if _, ok := albums[toAlbum]; !ok {
+		http.Error(w, "target album not found", http.StatusBadRequest)
+		return
+	}
+
+	safeName := filepath.Base(name)
+	src := filepath.Join(s.photosDir, fromAlbum, safeName)
+	dst := filepath.Join(s.photosDir, toAlbum, safeName)
+
+	if move {
+		if err := os.Rename(src, dst); err != nil {
+			http.Error(w, fmt.Sprintf("move failed: %v", err), http.StatusInternalServerError)
+			return
+		}
+		log.Printf("moved %s: %s → %s", safeName, fromAlbum, toAlbum)
+	} else {
+		if err := copyFile(src, dst); err != nil {
+			http.Error(w, fmt.Sprintf("copy failed: %v", err), http.StatusInternalServerError)
+			return
+		}
+		log.Printf("copied %s: %s → %s", safeName, fromAlbum, toAlbum)
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -216,34 +344,35 @@ func (s *server) logout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
-func health(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusOK)
-}
-
-func (s *server) albumDir(album string) string {
-	switch album {
-	case "public":
-		return s.publicDir
-	case "secret":
-		return s.secretDir
-	}
-	return ""
-}
+func health(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }
 
 func serveImage(w http.ResponseWriter, r *http.Request, dir, name string) {
-	// Prevent path traversal
-	if strings.Contains(name, "/") || strings.Contains(name, "\\") {
+	if strings.ContainsAny(name, "/\\") {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 	path := filepath.Join(dir, filepath.Base(name))
-	ext := strings.ToLower(filepath.Ext(name))
-	ct := mime.TypeByExtension(ext)
+	ct := mime.TypeByExtension(strings.ToLower(filepath.Ext(name)))
 	if ct == "" {
 		ct = "image/jpeg"
 	}
 	w.Header().Set("Content-Type", ct)
 	http.ServeFile(w, r, path)
+}
+
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+	_, err = io.Copy(out, in)
+	return err
 }
 
 func render(w http.ResponseWriter, name string, data any) {

@@ -127,6 +127,45 @@ body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--t
 .photo-count { color: var(--muted); font-weight: 400; font-size: 0.9rem; }
 .empty-note { color: var(--muted); font-size: 0.9rem; }
 
+/* Album badges */
+.album-badge {
+  display: inline-block; font-size: 0.7rem; font-weight: 600;
+  padding: 0.15rem 0.5rem; border-radius: 999px; margin-left: 0.4rem;
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
+.album-badge.public  { background: rgba(124,108,250,0.2); color: var(--accent); }
+.album-badge.private { background: rgba(224,86,86,0.2);  color: var(--danger); }
+
+.admin-btn-danger {
+  padding: 0.3rem 0.8rem; background: transparent;
+  border: 1px solid var(--danger); border-radius: 6px;
+  color: var(--danger); font-size: 0.78rem; cursor: pointer;
+  margin-left: 0.75rem; transition: all 0.2s;
+}
+.admin-btn-danger:hover { background: var(--danger); color: #fff; }
+
+.admin-input {
+  padding: 0.6rem 0.9rem; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 8px; color: var(--text);
+  font-size: 0.9rem;
+}
+.admin-check-label { font-size: 0.9rem; color: var(--muted); display: flex; align-items: center; gap: 0.4rem; }
+.admin-inline-row  { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-top: 0.75rem; }
+
+/* Per-thumb actions */
+.admin-thumb-actions { padding: 0 0.6rem 0.6rem; display: flex; flex-direction: column; gap: 0.4rem; }
+.transfer-row { display: flex; gap: 0.3rem; align-items: center; }
+.admin-select-sm {
+  flex: 1; padding: 0.3rem 0.4rem; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 0.75rem;
+}
+.admin-btn-sm {
+  padding: 0.3rem 0.6rem; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 6px;
+  color: var(--text); font-size: 0.75rem; cursor: pointer; transition: all 0.2s;
+}
+.admin-btn-sm:hover { border-color: var(--accent); color: var(--accent); }
+
 /* Upload form */
 .admin-select, .admin-file-input {
   padding: 0.6rem 0.9rem; background: var(--surface);

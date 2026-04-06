@@ -14,13 +14,13 @@
   </header>
 
   {{if .Photos}}
-  <!-- Hero slideshow -->
+  <!-- Hero slideshow — click any slide to open lightbox -->
   <section id="main-splide" class="splide fullscreen-splide" aria-label="Photo gallery">
     <div class="splide__track">
       <ul class="splide__list">
-        {{range .Photos}}
-        <li class="splide__slide">
-          <img src="/photos/public/{{.}}" alt="Gallery photo" loading="lazy">
+        {{range $i, $p := .Photos}}
+        <li class="splide__slide" onclick="openLightbox({{$i}})" style="cursor:zoom-in">
+          <img src="{{$p}}" alt="Gallery photo" loading="lazy">
         </li>
         {{end}}
       </ul>
@@ -32,7 +32,7 @@
     <div class="photo-grid">
       {{range $i, $p := .Photos}}
       <div class="grid-item" onclick="openLightbox({{$i}})">
-        <img src="/photos/public/{{$p}}" alt="" loading="lazy">
+        <img src="{{$p}}" alt="" loading="lazy">
       </div>
       {{end}}
     </div>
@@ -66,15 +66,12 @@
 
     // ── Lightbox ────────────────────────────────────────
     const photos  = [{{range .Photos}}"{{.}}",{{end}}];
-    const baseUrl = "/photos/public/";
     let current   = 0;
     let hideTimer = null;
 
-    const lb      = document.getElementById('lb');
-    const lbImg   = document.getElementById('lb-img');
-    const lbPrev  = document.getElementById('lb-prev');
-    const lbNext  = document.getElementById('lb-next');
-    const lbBtns  = lb.querySelectorAll('.lb-nav, .lb-close');
+    const lb     = document.getElementById('lb');
+    const lbImg  = document.getElementById('lb-img');
+    const lbBtns = lb.querySelectorAll('.lb-nav, .lb-close');
 
     function showButtons() {
       lbBtns.forEach(b => b.classList.add('visible'));
@@ -84,7 +81,7 @@
 
     function openLightbox(idx) {
       current = idx;
-      lbImg.src = baseUrl + photos[current];
+      lbImg.src = photos[current];
       lb.classList.add('open');
       showButtons();
     }
@@ -96,20 +93,18 @@
 
     function prevPhoto() {
       current = (current - 1 + photos.length) % photos.length;
-      lbImg.src = baseUrl + photos[current];
+      lbImg.src = photos[current];
       showButtons();
     }
 
     function nextPhoto() {
       current = (current + 1) % photos.length;
-      lbImg.src = baseUrl + photos[current];
+      lbImg.src = photos[current];
       showButtons();
     }
 
-    // Click overlay background to close
     lb.addEventListener('click', e => { if (e.target === lb) closeLightbox(); });
 
-    // Keyboard navigation
     document.addEventListener('keydown', e => {
       if (!lb.classList.contains('open')) return;
       if (e.key === 'Escape')     closeLightbox();
@@ -117,10 +112,8 @@
       if (e.key === 'ArrowRight') nextPhoto();
     });
 
-    // Show buttons on mouse move
     lb.addEventListener('mousemove', showButtons);
 
-    // Touch swipe
     let touchStartX = 0;
     lb.addEventListener('touchstart', e => {
       touchStartX = e.touches[0].clientX;

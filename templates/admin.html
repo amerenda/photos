@@ -18,15 +18,26 @@
 
     <!-- Upload -->
     <section class="admin-section">
-      <h2>Upload Photo</h2>
+      <h2>Upload Photos</h2>
       <form id="upload-form" enctype="multipart/form-data">
         <select name="album" id="album-select" class="admin-select">
-          <option value="public">Public</option>
-          <option value="secret">Private</option>
+          {{range .Albums}}
+          <option value="{{.Name}}">{{.Name}}{{if .Secret}} (private){{end}}</option>
+          {{end}}
+          <option value="__new__">+ New album…</option>
         </select>
         <input type="file" name="file" id="file-input" accept="image/*" class="admin-file-input" multiple>
         <button type="submit" class="admin-btn" id="upload-btn">Upload</button>
       </form>
+
+      <!-- Shown when "+ New album" is selected -->
+      <div id="new-album-inline" style="display:none; margin-top:0.75rem; display:none; gap:0.5rem; align-items:center; flex-wrap:wrap;" class="admin-inline-row">
+        <input type="text" id="new-album-name" placeholder="Album name" class="admin-input" style="max-width:200px">
+        <label class="admin-check-label">
+          <input type="checkbox" id="new-album-secret"> Private
+        </label>
+      </div>
+
       <div id="progress-wrap" class="progress-wrap" style="display:none">
         <div class="progress-bar-track">
           <div class="progress-bar-fill" id="progress-fill"></div>
@@ -36,34 +47,46 @@
       <p id="upload-status" class="upload-status"></p>
     </section>
 
-    <!-- Public album -->
+    <!-- Create Album -->
     <section class="admin-section">
-      <h2>Public Album <span class="photo-count">({{len .PublicPhotos}})</span></h2>
-      {{if .PublicPhotos}}
-      <div class="admin-grid">
-        {{range .PublicPhotos}}
-        <div class="admin-thumb" id="pub-{{.}}">
-          <img src="/photos/public/{{.}}" alt="{{.}}" loading="lazy">
-          <div class="admin-thumb-name">{{.}}</div>
-          <button class="delete-btn" onclick="deletePhoto('public','{{.}}')">Delete</button>
-        </div>
-        {{end}}
+      <h2>Create Album</h2>
+      <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
+        <input type="text" id="create-album-name" placeholder="Album name" class="admin-input">
+        <label class="admin-check-label">
+          <input type="checkbox" id="create-album-secret"> Private
+        </label>
+        <button class="admin-btn" onclick="createAlbum()">Create</button>
       </div>
-      {{else}}
-      <p class="empty-note">No photos.</p>
-      {{end}}
+      <p id="create-status" class="upload-status"></p>
     </section>
 
-    <!-- Secret album -->
-    <section class="admin-section">
-      <h2>Private Album <span class="photo-count">({{len .SecretPhotos}})</span></h2>
-      {{if .SecretPhotos}}
+    <!-- Per-album sections -->
+    {{range .Albums}}
+    <section class="admin-section" id="album-section-{{.Name}}">
+      <h2>
+        {{.Name}}
+        {{if .Secret}}<span class="album-badge private">private</span>{{else}}<span class="album-badge public">public</span>{{end}}
+        <span class="photo-count">({{len .Photos}})</span>
+        <button class="admin-btn-danger" onclick="deleteAlbum('{{.Name}}')">Delete album</button>
+      </h2>
+
+      {{if .Photos}}
       <div class="admin-grid">
-        {{range .SecretPhotos}}
-        <div class="admin-thumb" id="sec-{{.}}">
-          <img src="/photos/secret/{{.}}" alt="{{.}}" loading="lazy">
+        {{$albumName := .Name}}
+        {{range .Photos}}
+        <div class="admin-thumb" id="thumb-{{$albumName}}-{{.}}">
+          <img src="/photos/{{$albumName}}/{{.}}" alt="{{.}}" loading="lazy">
           <div class="admin-thumb-name">{{.}}</div>
-          <button class="delete-btn" onclick="deletePhoto('secret','{{.}}')">Delete</button>
+          <div class="admin-thumb-actions">
+            <button class="delete-btn" onclick="deletePhoto('{{$albumName}}','{{.}}')">Delete</button>
+            <div class="transfer-row">
+              <select class="admin-select-sm" id="mv-{{$albumName}}-{{.}}">
+                {{range $.Albums}}{{if ne .Name $albumName}}<option value="{{.Name}}">{{.Name}}</option>{{end}}{{end}}
+              </select>
+              <button class="admin-btn-sm" onclick="transferPhoto('{{$albumName}}','{{.}}','mv-{{$albumName}}-{{.}}',true)">Move</button>
+              <button class="admin-btn-sm" onclick="transferPhoto('{{$albumName}}','{{.}}','mv-{{$albumName}}-{{.}}',false)">Copy</button>
+            </div>
+          </div>
         </div>
         {{end}}
       </div>
@@ -71,35 +94,72 @@
       <p class="empty-note">No photos.</p>
       {{end}}
     </section>
+    {{end}}
 
   </main>
 
   <script>
-    // Upload via XHR for progress events
-    document.getElementById('upload-form').addEventListener('submit', (e) => {
+    // ── Album select: show/hide new album fields ─────────
+    const albumSelect = document.getElementById('album-select');
+    const newAlbumInline = document.getElementById('new-album-inline');
+    albumSelect.addEventListener('change', () => {
+      newAlbumInline.style.display = albumSelect.value === '__new__' ? 'flex' : 'none';
+    });
+
+    // ── Upload ───────────────────────────────────────────
+    document.getElementById('upload-form').addEventListener('submit', async (e) => {
       e.preventDefault();
-      const status   = document.getElementById('upload-status');
-      const wrap     = document.getElementById('progress-wrap');
-      const fill     = document.getElementById('progress-fill');
-      const label    = document.getElementById('progress-label');
-      const btn      = document.getElementById('upload-btn');
-      const form     = new FormData(e.target);
+      const status = document.getElementById('upload-status');
+      const wrap   = document.getElementById('progress-wrap');
+      const fill   = document.getElementById('progress-fill');
+      const label  = document.getElementById('progress-label');
+      const btn    = document.getElementById('upload-btn');
 
       status.textContent = '';
+      btn.disabled = true;
+
+      let albumName = albumSelect.value;
+
+      // Create new album first if needed
+      if (albumName === '__new__') {
+        const name = document.getElementById('new-album-name').value.trim();
+        const secret = document.getElementById('new-album-secret').checked;
+        if (!name) {
+          status.textContent = 'Enter a name for the new album.';
+          status.style.color = 'var(--danger)';
+          btn.disabled = false;
+          return;
+        }
+        const r = await fetch('/admin/album', {
+          method: 'POST',
+          body: new URLSearchParams({name, secret: secret ? 'on' : ''}),
+        });
+        if (!r.ok) {
+          status.textContent = 'Create album failed: ' + await r.text();
+          status.style.color = 'var(--danger)';
+          btn.disabled = false;
+          return;
+        }
+        albumName = name;
+        // Add to select and update all transfer dropdowns
+        const opt = new Option(name + (secret ? ' (private)' : ''), name);
+        albumSelect.insertBefore(opt, albumSelect.querySelector('option[value="__new__"]'));
+      }
+
+      const form = new FormData(e.target);
+      form.set('album', albumName);
+
       wrap.style.display = 'flex';
       fill.style.width = '0%';
       label.textContent = '0%';
-      btn.disabled = true;
 
       const xhr = new XMLHttpRequest();
-
       xhr.upload.onprogress = (ev) => {
         if (!ev.lengthComputable) return;
         const pct = Math.round(ev.loaded / ev.total * 100);
         fill.style.width = pct + '%';
         label.textContent = pct + '%';
       };
-
       xhr.onload = () => {
         btn.disabled = false;
         wrap.style.display = 'none';
@@ -108,32 +168,77 @@
           status.style.color = '#4caf50';
         } else {
           status.textContent = 'Error ' + xhr.status + ': ' + xhr.responseText;
-          status.style.color = '#f44336';
+          status.style.color = 'var(--danger)';
         }
       };
-
       xhr.onerror = () => {
         btn.disabled = false;
         wrap.style.display = 'none';
         status.textContent = 'Network error — check file size and try again.';
-        status.style.color = '#f44336';
+        status.style.color = 'var(--danger)';
       };
-
       xhr.open('POST', '/admin/upload');
       xhr.send(form);
     });
 
-    // Delete
-    async function deletePhoto(album, name) {
-      if (!confirm('Delete ' + name + '?')) return;
-      const r = await fetch('/admin/photo?album=' + encodeURIComponent(album) + '&name=' + encodeURIComponent(name), {
-        method: 'DELETE',
+    // ── Create album (standalone) ─────────────────────────
+    async function createAlbum() {
+      const name   = document.getElementById('create-album-name').value.trim();
+      const secret = document.getElementById('create-album-secret').checked;
+      const status = document.getElementById('create-status');
+      if (!name) { status.textContent = 'Enter a name.'; status.style.color = 'var(--danger)'; return; }
+      const r = await fetch('/admin/album', {
+        method: 'POST',
+        body: new URLSearchParams({name, secret: secret ? 'on' : ''}),
       });
       if (r.ok) {
-        const prefix = album === 'public' ? 'pub-' : 'sec-';
-        document.getElementById(prefix + name)?.remove();
+        status.textContent = 'Created — reload to manage it.';
+        status.style.color = '#4caf50';
+        document.getElementById('create-album-name').value = '';
+      } else {
+        status.textContent = await r.text();
+        status.style.color = 'var(--danger)';
+      }
+    }
+
+    // ── Delete album ─────────────────────────────────────
+    async function deleteAlbum(name) {
+      if (!confirm('Delete album "' + name + '" and ALL its photos?')) return;
+      const r = await fetch('/admin/album?name=' + encodeURIComponent(name), {method: 'DELETE'});
+      if (r.ok) {
+        document.getElementById('album-section-' + name)?.remove();
       } else {
         alert('Delete failed: ' + await r.text());
+      }
+    }
+
+    // ── Delete photo ─────────────────────────────────────
+    async function deletePhoto(album, name) {
+      if (!confirm('Delete ' + name + '?')) return;
+      const r = await fetch('/admin/photo?album=' + encodeURIComponent(album) + '&name=' + encodeURIComponent(name), {method: 'DELETE'});
+      if (r.ok) {
+        document.getElementById('thumb-' + album + '-' + name)?.remove();
+      } else {
+        alert('Delete failed: ' + await r.text());
+      }
+    }
+
+    // ── Move / Copy photo ────────────────────────────────
+    async function transferPhoto(fromAlbum, name, selectId, move) {
+      const toAlbum = document.getElementById(selectId)?.value;
+      if (!toAlbum) return;
+      const action = move ? 'Move' : 'Copy';
+      if (!confirm(action + ' ' + name + ' to "' + toAlbum + '"?')) return;
+      const url  = move ? '/admin/photo/move' : '/admin/photo/copy';
+      const r = await fetch(url, {
+        method: 'POST',
+        body: new URLSearchParams({from_album: fromAlbum, to_album: toAlbum, name}),
+      });
+      if (r.ok) {
+        if (move) document.getElementById('thumb-' + fromAlbum + '-' + name)?.remove();
+        else alert('Copied — reload to see it in the target album.');
+      } else {
+        alert(action + ' failed: ' + await r.text());
       }
     }
   </script>
